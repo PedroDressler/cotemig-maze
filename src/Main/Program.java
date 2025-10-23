@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 
 public class Program {
     public static void main(String[] args) {
@@ -29,7 +31,7 @@ public class Program {
 
     	final int N_RATS = scanner.nextInt();
 
-    	final long WAIT_TIME = 150;
+    	final long WAIT_TIME = 250;
     	
         Maze maze = new Maze(MAZE_HEIGHT, MAZE_WIDTH);
         Console ui = new Console(maze);
@@ -40,6 +42,14 @@ public class Program {
         maze.buildMaze(availableFloorTiles);
         
         List<Thread> ratThreads = new ArrayList<>();
+        CountDownLatch latch = new CountDownLatch(N_RATS);
+
+        CyclicBarrier barrier = new CyclicBarrier(N_RATS, () -> {
+            synchronized(maze.getAllBlocks()) {
+                ui.clear();
+                ui.draw();
+            }
+        });
 
         // Spawn rats
         for (int i = 0; i < N_RATS; i++) {
@@ -50,7 +60,7 @@ public class Program {
         		continue;
         	}
 
-        	Rat rato = new Rat(maze, winner, WAIT_TIME, ui, startPos[0], startPos[1]);
+        	Rat rato = new Rat(maze, winner, WAIT_TIME, ui, startPos[0], startPos[1], barrier);
 
         	Thread ratThread = new Thread(rato);
         	ratThreads.add(ratThread);

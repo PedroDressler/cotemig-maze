@@ -11,6 +11,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Stack;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 
 public class Rat extends GameObject implements Runnable {
 
@@ -22,8 +25,9 @@ public class Rat extends GameObject implements Runnable {
     
     private final int startX;
     private final int startY;
+    private final CyclicBarrier barrier;
     
-    public Rat(Maze maze, Winner winner, long waitTime, UI ui, int startX, int startY) {
+    public Rat(Maze maze, Winner winner, long waitTime, UI ui, int startX, int startY, CyclicBarrier barrier) {
         super();
         this.maze = maze;
         this.winner = winner;
@@ -31,6 +35,7 @@ public class Rat extends GameObject implements Runnable {
         this.ui = ui;
         this.startX = startX;
         this.startY = startY;
+        this.barrier = barrier;
 
         synchronized(maze.getAllBlocks()) {
             if (maze.getBlock(startX, startY) == null) {
@@ -61,7 +66,7 @@ public class Rat extends GameObject implements Runnable {
             GameObject nextStepObject;
             
             synchronized(maze.getAllBlocks()) {
-            	nextStepObject = getLastObject(stepX, stepY);
+            	nextStepObject = maze.getBottomObject(stepX, stepY);
             }
             
             if (nextStepObject instanceof Target) {
@@ -77,7 +82,6 @@ public class Rat extends GameObject implements Runnable {
                 if (backtrack(stepX, stepY)) return true;
                 
                 if (winner.getWinner() != null) return false;
-
                 stepBackRat(x, y);
                 render();
             }
@@ -90,8 +94,9 @@ public class Rat extends GameObject implements Runnable {
         if (!isOnBounds) return false;
         
         boolean isBlocked;
+
         synchronized(maze.getAllBlocks()) {
-        	GameObject topObject = getLastObject(x, y);
+        	GameObject topObject = maze.getBottomObject(x, y);
         	
         	isBlocked = (topObject instanceof Wall) || (topObject instanceof Rat) ||
         			(topObject instanceof Path && ((Path)topObject).getRat() != this);
@@ -117,16 +122,6 @@ public class Rat extends GameObject implements Runnable {
         	}
         }
         return false;
-    }
-    
-    private GameObject getLastObject(final int x, final int y) {
-    	Block block = maze.getBlock(x, y);
-    	
-    	if (block == null || block.getObjects().isEmpty()) {
-    		return null;
-    	}
-    	
-    	return block.getObjects().getLast();
     }
 
     private void triggerEndGame() {
@@ -184,11 +179,19 @@ public class Rat extends GameObject implements Runnable {
     }
 
     private void render() {
-    	synchronized(maze.getAllBlocks()) {
-    		ui.clear();
-            ui.draw();
-    	}
-        
+        try {
+            barrier.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace(); //handle it appropriately
+        } catch (BrokenBarrierException e) {
+            throw new RuntimeException(e);
+        }
+
+//        synchronized(maze.getAllBlocks()) {
+//    		ui.clear();
+//            ui.draw();
+//    	}
+
         freeze();
     }
 
