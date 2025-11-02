@@ -12,10 +12,13 @@ public class Winner {
     }
 
     public synchronized void setWinner(Rat winner) {
-    	if (this.winner == null) {
-    		this.winner = winner;
-    	}
+    	if (this.winner == null) this.winner = winner;
     }
+
+    public synchronized boolean isDecided() {
+        return winner != null;
+    }
+
     
     @Override
     public String toString() {

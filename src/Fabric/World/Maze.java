@@ -67,6 +67,8 @@ public class Maze {
         if (targetY % 2 == 0) targetY--;
 
         blocks[targetX][targetY] = new Block(new Target());
+
+        availableFloorTiles.remove(new int[]{targetX, targetY});
     }
 
     private void carvePassages(int x, int y, Random rand, List<int[]> availableFloorTiles) {

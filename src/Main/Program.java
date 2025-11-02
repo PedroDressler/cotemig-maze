@@ -1,5 +1,6 @@
 package Main;
 
+import Fabric.Objects.Rat.CustomPhaser;
 import Fabric.Objects.Rat.Rat;
 import Fabric.Objects.Target;
 import Fabric.Objects.Winner;
@@ -14,9 +15,14 @@ import java.util.Random;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Phaser;
 
 public class Program {
     public static void main(String[] args) {
+        Console ui = new Console();
+
+        ui.clear();
+
         Scanner scanner = new Scanner(System.in);
 
         System.out.print("Digite a altura do labirinto (blocos).\n> ");
@@ -31,20 +37,20 @@ public class Program {
 
     	final int N_RATS = scanner.nextInt();
 
-    	final long WAIT_TIME = 250;
+    	final long WAIT_TIME = 200;
     	
         Maze maze = new Maze(MAZE_HEIGHT, MAZE_WIDTH);
-        Console ui = new Console(maze);
+        ui.setMaze(maze);
         Winner winner = new Winner();
         Random rand = new Random();
 
         List<int[]> availableFloorTiles = new ArrayList<>();
+
         maze.buildMaze(availableFloorTiles);
         
         List<Thread> ratThreads = new ArrayList<>();
-        CountDownLatch latch = new CountDownLatch(N_RATS);
 
-        CyclicBarrier barrier = new CyclicBarrier(N_RATS, () -> {
+        CustomPhaser phaser = new CustomPhaser(N_RATS, () -> {
             synchronized(maze.getAllBlocks()) {
                 ui.clear();
                 ui.draw();
@@ -55,25 +61,20 @@ public class Program {
         for (int i = 0; i < N_RATS; i++) {
         	int[] startPos = availableFloorTiles.remove(rand.nextInt(availableFloorTiles.size()));
 
-        	if (maze.getTopObject(startPos[0], startPos[1]) instanceof Target) {
-        		i--;
-        		continue;
-        	}
+//            Rat rato = new Rat(maze, winner, ui, barrier, WAIT_TIME, startPos[0], startPos[1]);
+            Rat rato = new Rat(maze, winner, ui, phaser, WAIT_TIME, startPos[0], startPos[1]);
 
-        	Rat rato = new Rat(maze, winner, WAIT_TIME, ui, startPos[0], startPos[1], barrier);
-
-        	Thread ratThread = new Thread(rato);
+        	Thread ratThread = new Thread(rato, "Rato-" + i);
         	ratThreads.add(ratThread);
         }
 
+        ui.clear();
         ui.draw();
-
-        System.out.print("Prévia do labirinto ^");
 
         try {
             Thread.sleep(3000);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+        }  catch (InterruptedException e) {
+            // ignore
         }
 
         ratThreads.forEach(Thread::start);
@@ -82,16 +83,14 @@ public class Program {
         	try {
         		t.join();
         	} catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                // ignore
         	}
         }
-        
-        if (winner.getWinner() != null) {
-            System.out.println("	BATTLE ROYALE #1\n\n" +
-                    "O rato " + winner.getWinner().getID() + " achou o queijo!\n" +
-                    "Ele deu " + winner.getWinner().getStepsTaken() + " passo(s) para a vitória.");
-        } else {
-        	System.out.println("Nenhum rato encontrou o queijo");
-        }
+
+        System.out.print(
+                "\n\nBATTLE ROYALE #1\n\n" +
+                "O " + winner.getWinner().getName() + " achou o queijo!\n" +
+                "Ele deu " + winner.getWinner().getStepsTaken() + " passo(s) para a vitória."
+        );
     }
 }

@@ -11,4 +11,9 @@ public class Window implements UI {
     public void clear() {
 
     }
+
+    @Override
+    public void sendNotification(String message) {
+
+    }
 }

@@ -14,28 +14,33 @@ import java.util.Stack;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Phaser;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Rat extends GameObject implements Runnable {
 
     private final Maze maze;
     private final Winner winner;
-    private final long waitTime;
-    private final UI ui;
     private final Stack<History> history = new Stack<>();
-    
+    private final Phaser phaser;
+    private final UI ui;
+
+    private final long waitTime;
     private final int startX;
     private final int startY;
-    private final CyclicBarrier barrier;
-    
-    public Rat(Maze maze, Winner winner, long waitTime, UI ui, int startX, int startY, CyclicBarrier barrier) {
+    private String name;
+    private AtomicInteger stepsTaken = new AtomicInteger(0);
+//    private final CyclicBarrier barrier;
+
+    public Rat(Maze maze, Winner winner, UI ui, Phaser phaser, long waitTime, int startX, int startY) {
         super();
         this.maze = maze;
         this.winner = winner;
-        this.waitTime = waitTime;
         this.ui = ui;
+        this.waitTime = waitTime;
         this.startX = startX;
         this.startY = startY;
-        this.barrier = barrier;
+        this.phaser = phaser;
 
         synchronized(maze.getAllBlocks()) {
             if (maze.getBlock(startX, startY) == null) {
@@ -47,18 +52,28 @@ public class Rat extends GameObject implements Runnable {
     
     @Override
     public void run() {
-        if (winner.getWinner() != null) return;
-
+        this.name = Thread.currentThread().getName();
+        ui.sendNotification("O " + this.getName() + " foi invocado.");
         if (backtrack(this.startX, this.startY)) {
-            triggerEndGame();
+            synchronized (winner) {
+                winner.setWinner(this);
+            }
+            phaser.forceTermination();
+        } else {
+            if (!winner.isDecided()) {
+                ui.sendNotification("O " + this.getName() + " se perdeu no meio do caminho.");
+            } else {
+                ui.sendNotification("O " + this.getName() + " foi abduzido.");
+            }
         }
+        phaser.arriveAndDeregister();
     }
 
     private boolean backtrack(final int x, final int y) {
-    	if (winner.getWinner() != null) return false;
+
 
         for (RatDirection ratDirection : randomizeMoves()) {
-        	if (winner.getWinner() != null) return false;
+            if (winner.isDecided()) return false;
         	
             int stepX = x + ratDirection.x();
             int stepY = y + ratDirection.y();
@@ -76,14 +91,19 @@ public class Rat extends GameObject implements Runnable {
             }
             
             if (isSafe(stepX, stepY) && !isExplored(stepX, stepY)) {
+                if (winner.isDecided()) return false;
+
                 stepUpRat(stepX, stepY, ratDirection);
-                render();
+                if (!render()) {
+                    return false;
+                }
 
                 if (backtrack(stepX, stepY)) return true;
-                
-                if (winner.getWinner() != null) return false;
+
                 stepBackRat(x, y);
-                render();
+                if (!render()) {
+                    return false;
+                }
             }
         }
         return false;
@@ -113,7 +133,7 @@ public class Rat extends GameObject implements Runnable {
         	
         	if (block == null) return false;
         	
-        	objectsCopy = new ArrayList<>(block.getObjects());
+        	objectsCopy = block.getObjects();
         }
         
         for (GameObject object : objectsCopy) {
@@ -122,12 +142,6 @@ public class Rat extends GameObject implements Runnable {
         	}
         }
         return false;
-    }
-
-    private void triggerEndGame() {
-        synchronized (winner) {
-        	winner.setWinner(this);
-        }
     }
 
     private RatDirection[] randomizeMoves() {
@@ -142,17 +156,6 @@ public class Rat extends GameObject implements Runnable {
         return availableRatDirections;
     }
 
-    private void freeze() {
-        if (waitTime <= 0) return;
-
-        try {
-            Thread.sleep(waitTime);
-        } catch (InterruptedException e) {
-            System.out.println(e.getMessage());
-        	Thread.currentThread().interrupt();
-        }
-    }
-
     private void stepUpRat(final int x, final int y, RatDirection ratDirection) {
         int stepX = x - ratDirection.x();
         int stepY = y - ratDirection.y();
@@ -160,44 +163,69 @@ public class Rat extends GameObject implements Runnable {
         Path path = new Path(this);
         history.push(new History(x, y, path));
 
-        maze.remove(stepX, stepY, this);
-        maze.add(stepX, stepY, path);
-        
-        if (maze.getBlock(x, y) == null) {
-            maze.setBlock(x, y, new Floor());
+        synchronized (maze.getAllBlocks()) {
+            maze.remove(stepX, stepY, this);
+            maze.add(stepX, stepY, path);
+
+            if (maze.getBlock(x, y) == null) {
+                maze.setBlock(x, y, new Floor());
+            }
+
+            maze.add(x, y, this);
         }
 
-        maze.add(x, y, this);
+        stepsTaken.incrementAndGet();
+
+//        ui.sendNotification("Rat " + Thread.currentThread().getName() + " stepped from (" + x + ", " + y + ") to (" + stepX + ", " + stepY + ").");
     }
 
     private void stepBackRat(final int oldX, final int oldY) {
         History back = history.pop();
 
-        maze.remove(back.x(), back.y(), this);
-        maze.remove(oldX, oldY, back.path());
-        maze.add(oldX, oldY, this);
-    }
-
-    private void render() {
-        try {
-            barrier.await();
-        } catch (InterruptedException e) {
-            e.printStackTrace(); //handle it appropriately
-        } catch (BrokenBarrierException e) {
-            throw new RuntimeException(e);
+        synchronized (maze.getAllBlocks()) {
+            maze.remove(back.x(), back.y(), this);
+            maze.remove(oldX, oldY, back.path());
+            maze.add(oldX, oldY, this);
         }
 
-//        synchronized(maze.getAllBlocks()) {
-//    		ui.clear();
-//            ui.draw();
-//    	}
+        stepsTaken.incrementAndGet();
 
-        freeze();
+//        ui.sendNotification("Rat " + Thread.currentThread().getName() + " stepped from (" + back.x() + ", " + back.y() + ") to (" + oldX + ", " + oldY + ").");
+    }
+
+    private boolean render() {
+        // barrier logic
+//        try {
+//            barrier.await();
+//        } catch (InterruptedException e) {
+//            // ignore
+//        } catch (BrokenBarrierException e) {
+//            throw new RuntimeException(e);
+//        }
+
+        int currentPhase = phaser.arriveAndAwaitAdvance();
+
+        if (currentPhase < 0) {
+            return false;
+        }
+
+        try {
+            Thread.sleep(waitTime);
+        } catch (InterruptedException e) {
+            // ignore
+        }
+
+        return true;
     }
 
     public int getStepsTaken() {
-        return this.history.size();
+        return this.stepsTaken.get();
     }
+
+    public String getName() {
+        return this.name;
+    }
+
 
 }
 
