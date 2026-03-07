@@ -59,10 +59,10 @@ public class Program {
 
         // Spawn rats
         for (int i = 0; i < N_RATS; i++) {
-        	int[] startPos = availableFloorTiles.remove(rand.nextInt(availableFloorTiles.size()));
+//        	int[] startPos = availableFloorTiles.remove(rand.nextInt(availableFloorTiles.size()));
 
-//            Rat rato = new Rat(maze, winner, ui, barrier, WAIT_TIME, startPos[0], startPos[1]);
-            Rat rato = new Rat(maze, winner, ui, phaser, WAIT_TIME, startPos[0], startPos[1]);
+//            Rat rato = new Rat(maze, winner, ui, phaser, WAIT_TIME, startPos[0], startPos[1]);
+            Rat rato = new Rat(maze, winner, ui, phaser, WAIT_TIME, 1, 1);
 
         	Thread ratThread = new Thread(rato, "Rato-" + i);
         	ratThreads.add(ratThread);
